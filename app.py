@@ -81,7 +81,6 @@ def calculate_kpis(df):
         return {}
         
     kpis = {
-        # Total Actions is now simply the number of valid rows after filtering in load_data
         'Total Actions': df.shape[0], 
         'Unique Colleges': df['College'].nunique(),
         'Total Salary Deducted': df['Salary'].sum(),
@@ -136,9 +135,18 @@ def create_charts(df):
     st.plotly_chart(fig_bar, use_container_width=True)
 
 
+# --- Callback function to save the link to session state ---
+def update_url():
+    """Saves the current text input value to Streamlit's session state."""
+    st.session_state['sheet_url'] = st.session_state['url_input']
+
 # --- 5. Streamlit App Layout ---
 def main():
     st.set_page_config(layout="wide", page_title="HED Monitoring Dashboard")
+
+    # Initialize session state variable if it doesn't exist
+    if 'sheet_url' not in st.session_state:
+        st.session_state['sheet_url'] = ''
 
     st.markdown("""
         <style>
@@ -155,21 +163,25 @@ def main():
 
     # --- Data Input Section ---
     st.header("🔗 Connect Data Source")
+    
+    # Use session_state to hold the current value of the URL, making it persistent
     sheet_url = st.text_input(
         "Paste Google Sheet 'Publish to web' CSV Link Here:",
+        value=st.session_state['sheet_url'], # Pre-fill from state
+        key='url_input', # Unique key for the widget
+        on_change=update_url, # Callback to save the link immediately when input changes
         help="Go to your Google Sheet > File > Share > Publish to web > Select CSV > Copy Link."
     )
     
-    # Load and process data
-    df = load_data(sheet_url)
+    # Use the session state value for data loading
+    df = load_data(st.session_state['sheet_url'])
 
-    if df.empty and sheet_url:
-        # If the user entered a link but it failed to load, stop here.
+    if df.empty and st.session_state['sheet_url']:
+        st.warning("Data loading failed. Please verify the URL is the 'Publish to web' CSV link.")
         return
     
-    if df.empty and not sheet_url:
-        # If showing mock data, continue
-        pass
+    if df.empty and not st.session_state['sheet_url']:
+        pass # Showing mock data
 
     # --- KPI Display ---
     st.header("📊 Key Performance Indicators")
@@ -194,7 +206,6 @@ def main():
     
     # --- Charts Section ---
     st.header("📈 Visual Analysis")
-    # Using a single column layout for better mobile view of charts
     create_charts(df)
     
     # --- Detailed Records Table (Filterable) ---
@@ -226,9 +237,9 @@ def main():
 
     if filtered_df.empty and search_term:
         st.warning(f"No records found matching '{search_term}'.")
-    elif filtered_df.empty and not search_term and sheet_url:
+    elif filtered_df.empty and not search_term and st.session_state['sheet_url']:
         st.warning("No disciplinary action records found in your sheet (only rows with an 'Action' type are counted).")
-    elif filtered_df.empty and not sheet_url:
+    elif filtered_df.empty and not st.session_state['sheet_url']:
         st.warning("The data frame is empty. Please connect your Google Sheet.")
 
 if __name__ == '__main__':
