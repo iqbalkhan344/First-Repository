@@ -1,4 +1,4 @@
-import streamlit as st
+        import streamlit as st
 import pandas as pd
 import plotly.express as px
 import io
@@ -51,12 +51,22 @@ def load_data(url):
         'Salary Deducted': 'Salary',
     })
     
-    # Select and reorder relevant columns
-    COLUMNS_TO_KEEP = ['District', 'College', 'Gender', 'Type', 'Category', 'Action', 'Name', 'Designation', 'Salary', 'Reason']
-    df = df.reindex(columns=COLUMNS_TO_KEEP, fill_value='')
+    # Select and reorder relevant columns, ensuring all expected columns exist
+    EXPECTED_COLUMNS = ['District', 'College', 'Gender', 'Type', 'Category', 'Action', 'Name', 'Designation', 'Salary', 'Reason']
+    
+    # Fill in missing expected columns with empty strings/zeros if they don't exist in the CSV
+    for col in EXPECTED_COLUMNS:
+        if col not in df.columns:
+            df[col] = '' if col != 'Salary' else 0
+
+    df = df.reindex(columns=EXPECTED_COLUMNS, fill_value='')
 
     # Clean the Salary column: replace non-numeric (like empty strings) with 0 and convert to numeric
     df['Salary'] = pd.to_numeric(df['Salary'], errors='coerce').fillna(0).astype(int)
+    
+    # Filter: ONLY KEEP ROWS WHERE 'Action' IS NOT EMPTY. This ensures only actual records are counted.
+    df = df[df['Action'].astype(str).str.strip() != '']
+    df = df.reset_index(drop=True)
     
     # Clean up string fields
     for col in ['District', 'College', 'Category', 'Action', 'Reason']:
@@ -71,13 +81,14 @@ def calculate_kpis(df):
         return {}
         
     kpis = {
-        'Total Actions': df.shape[0],
+        # Total Actions is now simply the number of valid rows after filtering in load_data
+        'Total Actions': df.shape[0], 
         'Unique Colleges': df['College'].nunique(),
         'Total Salary Deducted': df['Salary'].sum(),
-        'Employee Issues': df[df['Category'] == 'Employee'].shape[0],
-        'Warnings': df[df['Action'].str.contains('Warning', case=False)].shape[0],
-        'Explanations': df[df['Action'].str.contains('Explanation', case=False)].shape[0],
-        'Inquiries': df[df['Action'].str.contains('Inquiry', case=False)].shape[0],
+        'Employee Issues': df[df['Category'].str.contains('Employee', case=False, na=False)].shape[0],
+        'Warnings': df[df['Action'].str.contains('Warning', case=False, na=False)].shape[0],
+        'Explanations': df[df['Action'].str.contains('Explanation', case=False, na=False)].shape[0],
+        'Inquiries': df[df['Action'].str.contains('Inquiry', case=False, na=False)].shape[0],
     }
     return kpis
 
@@ -131,6 +142,7 @@ def main():
 
     st.markdown("""
         <style>
+            /* Custom styling for a modern look */
             .css-1d391kg { padding-top: 2rem; padding-bottom: 2rem; }
             .reportview-container .main .block-container { max-width: 1200px; }
             .st-emotion-cache-1r6i7l3 {background-color: #2e8b57; color: white; padding: 1.5rem; border-radius: 0.5rem;}
@@ -182,9 +194,8 @@ def main():
     
     # --- Charts Section ---
     st.header("📈 Visual Analysis")
-    col_chart1, col_chart2 = st.columns(2)
-    with col_chart1:
-        create_charts(df)
+    # Using a single column layout for better mobile view of charts
+    create_charts(df)
     
     # --- Detailed Records Table (Filterable) ---
     st.markdown("---")
@@ -195,7 +206,8 @@ def main():
     
     if search_term:
         search_lower = search_term.lower()
-        filtered_df = df[df.apply(lambda row: row.astype(str).str.lower().str.contains(search_lower).any(), axis=1)]
+        # Search across all relevant columns
+        filtered_df = df[df.apply(lambda row: row.astype(str).str.lower().str.contains(search_lower, na=False).any(), axis=1)]
     else:
         filtered_df = df
 
@@ -214,8 +226,10 @@ def main():
 
     if filtered_df.empty and search_term:
         st.warning(f"No records found matching '{search_term}'.")
-    elif filtered_df.empty:
-        st.warning("The data frame is empty.")
+    elif filtered_df.empty and not search_term and sheet_url:
+        st.warning("No disciplinary action records found in your sheet (only rows with an 'Action' type are counted).")
+    elif filtered_df.empty and not sheet_url:
+        st.warning("The data frame is empty. Please connect your Google Sheet.")
 
 if __name__ == '__main__':
     main()
